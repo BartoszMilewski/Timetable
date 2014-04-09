@@ -119,7 +119,10 @@ List<PartSlot> PartSlot::refineSlot(Constr const & constr) const
         TalkList otherTalks = _talksForSlot.remove1(tk);
         TalkSet clashesWithT = constr.clashesWith(tk);
         candts = candts.push_front(
-            PartSlot(_curTrackNo + 1, _talksInSlot.push_front(tk), diff(otherTalks, clashesWithT), _partSol.removeTalk(tk))
+            PartSlot( _curTrackNo + 1
+                    , _talksInSlot.push_front(tk)
+                    , diff(otherTalks, clashesWithT)
+                    , _partSol.removeTalk(tk))
             );
     });
     return candts;
@@ -234,6 +237,22 @@ void testBench(bool isPar = false)
     auto diff_sec = std::chrono::duration_cast<std::chrono::seconds>(end - start);
     std::cout << diff_sec.count() << std::endl;
 }
+
+/*
+Eager algorithm
+Parallel
+Found 8356608 solutions
+905
+Sequential
+Found 8356608 solutions
+2632
+Parallel
+Found 8356608 solutions
+893
+Sequential
+Found 8356608 solutions
+2606
+*/
 
 void main()
 {

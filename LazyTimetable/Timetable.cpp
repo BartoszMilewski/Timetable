@@ -129,7 +129,7 @@ Stream<PartSlot> PartSlot::refineSlot(TalkList candts, Constr const & constr) co
             , diff(otherTalks, clashesWithT)
             , _partSol.removeTalk(tk));
         Stream<PartSlot> tailStream = refineSlot(candts.pop_front(), constr);
-        return Cell<PartSlot>(partSlot, tailStream);
+        return Cell<PartSlot>(partSlot, std::move(tailStream));
     });
 }
 
@@ -241,7 +241,21 @@ void testBench(bool isPar = false)
     auto diff_sec = std::chrono::duration_cast<std::chrono::seconds>(end - start);
     std::cout << diff_sec.count() << std::endl;
 }
-
+/*
+Lazy algorithm
+Parallel
+Found 8356608 solutions
+1491
+Sequential
+Found 8356608 solutions
+3962
+Parallel
+Found 8356608 solutions
+1444
+Sequential
+Found 8356608 solutions
+3931
+*/
 void main()
 {
     std::cout << "Lazy algorithm\n";
