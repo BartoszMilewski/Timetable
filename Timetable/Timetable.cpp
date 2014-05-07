@@ -189,27 +189,28 @@ int generatePar(int depth, Partial const & part, Constraint const & constr)
 }
 
 
-int timeTable(Persons const & persons, TalkList const & allTalks, int maxTracks, int maxSlots, bool isPar = false)
+int timeTable( Persons const & persons
+             , TalkList const & allTalks
+             , int maxTracks
+             , int maxSlots
+             , int depth)
 {
     Constr constr(maxSlots, maxTracks, persons);
     PartSol emptySol(allTalks);
-    if (isPar)
-        return generatePar(2, PartSlot(emptySol), constr);
-    else
-        return generate(PartSlot(emptySol), constr);
+    return generatePar(depth, PartSlot(emptySol), constr);
 }
 
-int test()
+int test(int depth)
 {
     List<Talk> l1 = { 1, 2 };
     List<Talk> l2 = { 2, 3 };
     List<Talk> l3 = { 3, 4 };
     List<Person> persons = { { "P", l1 }, { "Q", l2 }, { "R", l3 } };
     List<Talk> talks = { 1, 2, 3, 4 };
-    return timeTable(persons, talks, 2, 2);
+    return timeTable(persons, talks, 2, 2, depth);
 }
 
-int bench(bool isPar)
+int bench(int depth)
 {
     List<Talk> talks = iterateN([](int i) { return i + 1; }, 1, 12);
     List<Person> persons = {
@@ -225,46 +226,48 @@ int bench(bool isPar)
         { "P1", { 10, 8, 6 } }
     };
     //std::cout << persons << std::endl;
-    return timeTable(persons, talks, 4, 3, isPar);
+    return timeTable(persons, talks, 4, 3, depth);
 }
 
-void testBench(bool isPar = false)
+void testBench(int depth)
 {
+    std::cout << "Depth of parallelism: " << depth << std::endl;
     auto start = std::chrono::steady_clock::now();
-    int solCount = bench(isPar);
+    int solCount = bench(depth);
     auto end = std::chrono::steady_clock::now();
     std::cout << "Found " << solCount << " solutions" << std::endl;
     auto diff_sec = std::chrono::duration_cast<std::chrono::seconds>(end - start);
-    std::cout << diff_sec.count() << std::endl;
+    std::cout << diff_sec.count() << " s" << std::endl;
 }
 
 /*
+
 Eager algorithm
-Parallel
+Depth of parallelism: 0
 Found 8356608 solutions
-905
-Sequential
+1315 s
+Depth of parallelism: 1
 Found 8356608 solutions
-2632
-Parallel
+522 s
+Depth of parallelism: 2
 Found 8356608 solutions
-893
-Sequential
+548 s
+Depth of parallelism: 3
 Found 8356608 solutions
-2606
+547 s
+Depth of parallelism: 0
+Found 8356608 solutions
+381 s
 */
 
 void main()
 {
     std::cout << "Eager algorithm\n";
-    //std::cout << test() << std::endl;
+    //std::cout << test(0) << std::endl;
 
-    std::cout << "Parallel\n";
-    testBench(true);
-    std::cout << "Sequential\n";
-    testBench();
-    std::cout << "Parallel\n";
-    testBench(true);
-    std::cout << "Sequential\n";
-    testBench();
+    testBench(0);
+    testBench(1);
+    testBench(2);
+    testBench(3);
+    testBench(0);
 }

@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <atomic>
+#include <mutex> // once_flag
 #include "List.h"
 
 // This is a suspension for value of type T
@@ -13,6 +14,10 @@
 // of the suspended value
 // After that the thunk is switched to "thunkGet",
 // which simply accesses the memoized value
+
+#if 0
+
+// Thread-unsafe implementation with no synchronization
 
 template<class T>
 class Susp
@@ -35,27 +40,85 @@ class Susp
     T const & setMemo()
     {
         _memo = _f();
+        _thunk = &thunkGet;
+        return getMemo();
+    }
+public:
+    explicit Susp(std::function<T()> const & f)
+        : _f(f), _thunk(&thunkForce), _memo(T())
+    {}
+    explicit Susp(T const & t)
+        : _thunk(&thunkGet), _memo(t)
+    {}
+    T const & get()
+    {
+        auto f = _thunk;
+        return f(this);
+    }
+    // We use it for debugging
+    bool isForced() const
+    {
+        return _thunk == &thunkGet;
+    }
+private:
+    mutable T const & (*_thunk)(Susp *);
+    mutable T   _memo;
+
+    std::function<T()> _f;
+};
+
+// Lock free implementation: incorrect!
+// Note: In the Haskell implementation _memo is an atomic pointer
+// It may be (atomically) overwritten, but it doesn't matter
+// since the suspended function is pure, and the value
+// pointed to will be garbage collected.
+
+template<class T>
+class Susp
+{
+    // thunk
+    static T const & thunkForce(Susp * susp)
+    {
+        return susp->setMemo();
+    }
+    // thunk
+    static T const & thunkGet(Susp * susp)
+    {
+        return susp->getMemo();
+    }
+
+    T const & getMemo()
+    {
+        return _memo;
+    }
+    T const & setMemo()
+    {
+        // Data race!
+        _memo = _f();
         // release barrier (_memo becomes visible)
         _thunk.store(&thunkGet, std::memory_order_release);
         return getMemo();
     }
 public:
-    explicit Susp(std::function<T()> f)
+    explicit Susp(std::function<T()> const & f)
         : _f(f), _thunk(&thunkForce), _memo(T())
     {}
-    T const & get() 
+    explicit Susp(T const & t)
+        : _thunk(&thunkGet), _memo(t)
+    {}
+    T const & get()
     {
         // acquire barrier
         auto f = _thunk.load(std::memory_order_acquire);
         return f(this);
     }
     // We use it for debugging
-	bool isForced() const
-	{
+    bool isForced() const
+    {
         // acquire barrier
         auto f = _thunk.load(std::memory_order_acquire);
-		return f == &thunkGet;
-	}
+        return f == &thunkGet;
+    }
 private:
     // Atomic pointer to function with release/acquire semantics
     mutable std::atomic<T const & (*)(Susp *)> _thunk;
@@ -63,6 +126,38 @@ private:
 
     std::function<T()> _f;
 };
+
+#else
+
+// call_once implementation
+
+template<typename T>
+class Susp{
+    std::once_flag flag;
+    T v;
+    std::function<T()> f;
+
+    void set_value(){
+        v = f();
+    }
+public:
+    Susp(std::function<T()> f_)
+        : f(f_)
+    {}
+    // Problem: Optimally, this should
+    // bypass the function and set the memo directly
+    // but there's no interface for seting the once_flag
+    explicit Susp(T const & v)
+        :f([v]() { return v; })
+    {}
+
+    T const & get(){
+        std::call_once(flag, &Susp::set_value, this);
+        return v;
+    }
+};
+
+#endif
 
 template<class T>
 class Stream;
@@ -74,7 +169,10 @@ class Cell
 {
 public:
 	Cell() {} // only to initialize _memo
-	Cell(T v, Stream<T> const & tail)
+    explicit Cell(T const & v)
+        : _v(v)
+    {}
+	Cell(T const & v, Stream<T> const & tail)
 		: _v(v), _tail(tail)
 	{}
 	T val() const 
@@ -90,24 +188,6 @@ private:
 	Stream<T> _tail;
 };
 
-// CellFun is a function object that creates a Cell 
-// containing a given value and a Stream
-
-template<class T>
-class CellFun
-{
-public:
-    CellFun(T v, Stream<T> const & s) : _v(v), _s(s) {}
-    explicit CellFun(T v) : _v(v) {}
-
-	Cell<T> operator()()
-	{
-		return Cell<T>(_v, _s);
-	}
-	T _v;
-	Stream<T> _s;
-};
-
 // Stream is either empty
 // or contains a suspended Cell
 
@@ -118,27 +198,13 @@ private:
 	std::shared_ptr <Susp<Cell<T>>> _lazyCell;
 public:
 	Stream() {}
-    explicit Stream(T v)
+    explicit Stream(T const & v)
     {
-        auto f = CellFun<T>(v);
-        _lazyCell = std::make_shared<Susp<Cell<T>>>(f);
+        _lazyCell = std::make_shared<Susp<Cell<T>>>(Cell<T>(v));
     }
-    Stream(T v, Stream const & s)
-    {
-        auto f = CellFun<T>(v, s);
-        _lazyCell = std::make_shared<Susp<Cell<T>>>(f);
-    }
-    Stream(std::function<Cell<T>()> f)
+    explicit Stream(std::function<Cell<T>()> const & f)
 		: _lazyCell(std::make_shared<Susp<Cell<T>>>(f))
 	{}
-    Stream(Stream && stm)
-        : _lazyCell(std::move(stm._lazyCell))
-    {}
-    Stream & operator=(Stream && stm)
-    {
-        _lazyCell = std::move(stm._lazyCell);
-        return *this;
-    }
     bool isEmpty() const
 	{
 		return !_lazyCell;
